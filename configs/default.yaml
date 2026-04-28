@@ -23,6 +23,8 @@ simulation:
     width: 24             # pixels (across direction of travel)
     min_gap: 10           # pixels between queued vehicles
     spawn_rate: 0.02      # probability per frame per direction (Poisson-like)
+    emergency_spawn_rate: 0.001 # probability of spawning an ambulance
+    rush_hour_multiplier: 3.0   # multiplier for spawn rates during rush hour
 
   # Traffic Light Timing (in seconds)
   traffic_light:

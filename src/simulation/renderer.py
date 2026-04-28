@@ -60,6 +60,7 @@ class Renderer:
         self.font_metric_value = pygame.font.SysFont("Segoe UI", 32, bold=True)
         self.font_small = pygame.font.SysFont("Segoe UI", 12)
         self.font_phase = pygame.font.SysFont("Segoe UI", 18, bold=True)
+        self.particles = []
 
         # Pre-render static road surface
         self.road_surface = self._build_road_surface()
@@ -168,8 +169,15 @@ class Renderer:
         # Draw traffic lights
         self._draw_traffic_lights(intersection)
 
+        # Draw V2X data beams
+        self._draw_v2x_beams(intersection)
+
         # Draw vehicles
         self._draw_vehicles(intersection)
+
+        # Draw weather overlay
+        if hasattr(intersection, "current_weather"):
+            self._draw_weather(intersection.current_weather)
 
         # Draw sidebar
         self._draw_sidebar(intersection)
@@ -228,18 +236,41 @@ class Renderer:
         # Bright core
         pygame.draw.circle(self.screen, (255, 255, 255), pos, 3)
 
+    def _draw_v2x_beams(self, intersection):
+        import math
+        cx, cy = intersection.center_x, intersection.center_y
+        beam_surf = pygame.Surface((self.sim_size, self.sim_size), pygame.SRCALPHA)
+        alpha = int(80 + 50 * math.sin(pygame.time.get_ticks() / 150.0))
+        for vehicle in intersection.get_all_vehicles():
+            if getattr(vehicle, "is_v2x_equipped", False) and getattr(vehicle, "v2x_target_speed", None) is not None:
+                pygame.draw.line(beam_surf, (0, 255, 255, alpha), (cx, cy), (vehicle.x, vehicle.y), 2)
+        self.screen.blit(beam_surf, (0, 0))
+
     def _draw_vehicles(self, intersection):
         """Draw all vehicles with wait-time color coding."""
         for vehicle in intersection.get_all_vehicles():
             # Vehicle rectangle
             w = vehicle.render_width
             h = vehicle.render_height
-            rect = pygame.Rect(vehicle.x - w / 2, vehicle.y - h / 2, w, h)
+            
+            vx, vy = vehicle.x, vehicle.y
+            if getattr(vehicle, "pulled_over", False):
+                shift = 15
+                if vehicle.direction in (Direction.NORTH, Direction.SOUTH):
+                    vx += shift
+                else:
+                    vy += shift
+
+            rect = pygame.Rect(vx - w / 2, vy - h / 2, w, h)
 
             # Body color
-            color = vehicle.body_color
-            if vehicle.state == VehicleState.WAITING:
-                color = vehicle.get_wait_color()
+            if vehicle.is_emergency:
+                ticks = pygame.time.get_ticks()
+                color = (255, 30, 30) if (ticks // 200) % 2 == 0 else (30, 30, 255)
+            else:
+                color = vehicle.body_color
+                if vehicle.state == VehicleState.WAITING:
+                    color = vehicle.get_wait_color()
 
             # Draw body with rounded corners
             pygame.draw.rect(self.screen, color, rect, border_radius=4)
@@ -250,6 +281,15 @@ class Renderer:
 
             # Headlights (small bright dots at front)
             self._draw_headlights(vehicle, rect)
+            # Fined indicator
+            if getattr(vehicle, "was_fined", False):
+                pygame.draw.rect(self.screen, COLORS["metric_bad"], rect, 2, border_radius=4)
+                fine_text = self.font_small.render("$$$", True, COLORS["metric_bad"])
+                self.screen.blit(fine_text, (vx - 10, vy - h/2 - 15))
+
+            # V2X Glow
+            if getattr(vehicle, "is_v2x_equipped", False):
+                pygame.draw.rect(self.screen, (0, 255, 255), rect, 2, border_radius=4)
 
     def _draw_headlights(self, vehicle, rect):
         """Draw tiny headlight dots at the front of the vehicle."""
@@ -300,16 +340,34 @@ class Renderer:
         self.screen.blit(subtitle, (sx + 20, y))
         y += 35
 
-        # Mode badge
-        mode_text = "FIXED TIMER"
-        badge_color = COLORS["metric_warn"]
-        badge = self.font_small.render(mode_text, True, badge_color)
+        # Time of Day badge
+        tod_text = intersection.current_phase_name
+        badge_color = COLORS["text_accent"]
+        badge = self.font_small.render(tod_text, True, badge_color)
         badge_rect = badge.get_rect()
         badge_bg = pygame.Rect(sx + 18, y - 2, badge_rect.width + 16, badge_rect.height + 8)
         pygame.draw.rect(self.screen, (*badge_color, 30), badge_bg, border_radius=4)
         pygame.draw.rect(self.screen, badge_color, badge_bg, 1, border_radius=4)
         self.screen.blit(badge, (sx + 26, y + 2))
         y += 45
+
+        # Weather badge
+        if hasattr(intersection, "current_weather"):
+            from .vehicle import Weather
+            w = intersection.current_weather
+            if w == Weather.CLEAR:
+                w_text, w_color = "CLEAR", COLORS["metric_good"]
+            elif w == Weather.RAIN:
+                w_text, w_color = "RAIN", (100, 150, 255)
+            else:
+                w_text, w_color = "SNOW", (200, 200, 200)
+
+            w_badge = self.font_small.render(f"WEATHER: {w_text}", True, w_color)
+            w_rect = w_badge.get_rect()
+            w_bg = pygame.Rect(sx + 18 + badge_rect.width + 26, y - 45 - 2, w_rect.width + 16, w_rect.height + 8)
+            pygame.draw.rect(self.screen, (*w_color, 30), w_bg, border_radius=4)
+            pygame.draw.rect(self.screen, w_color, w_bg, 1, border_radius=4)
+            self.screen.blit(w_badge, (sx + 26 + badge_rect.width + 26, y - 45 + 2))
 
         # Divider
         pygame.draw.line(self.screen, COLORS["sidebar_border"],
@@ -372,6 +430,10 @@ class Renderer:
              COLORS["metric_good"]),
             ("TOTAL CLEARED", f"{intersection.total_vehicles_cleared}",
              COLORS["text_accent"]),
+            ("FINES COLLECTED", f"${getattr(intersection, 'total_fines_collected', 0):,}",
+             COLORS["metric_bad"] if getattr(intersection, 'total_fines_collected', 0) > 0 else COLORS["text_dim"]),
+            ("V2X SYNCED", f"{getattr(intersection, 'v2x_synced_count', 0)}",
+             (0, 255, 255) if getattr(intersection, 'v2x_synced_count', 0) > 0 else COLORS["text_dim"]),
         ]
 
         for label, value, color in metrics:
@@ -458,6 +520,42 @@ class Renderer:
             return COLORS["metric_warn"]
         else:
             return COLORS["metric_bad"]
+
+    def _draw_weather(self, weather):
+        from .vehicle import Weather
+        import random
+        
+        # Spawn particles
+        if weather == Weather.RAIN:
+            if random.random() < 0.5:
+                for _ in range(5):
+                    x = random.randint(0, self.width)
+                    y = -20
+                    vy = random.uniform(15, 25)
+                    self.particles.append([x, y, vy, "rain"])
+        elif weather == Weather.SNOW:
+            if random.random() < 0.3:
+                for _ in range(3):
+                    x = random.randint(0, self.width)
+                    y = -10
+                    vy = random.uniform(2, 6)
+                    self.particles.append([x, y, vy, "snow"])
+        
+        # Update and draw
+        to_remove = []
+        for i, p in enumerate(self.particles):
+            p[1] += p[2]
+            if p[3] == "rain":
+                pygame.draw.line(self.screen, (150, 150, 255), (p[0], p[1]), (p[0]-2, p[1]+10), 2)
+            else:
+                p[0] += random.uniform(-1, 1)
+                pygame.draw.circle(self.screen, (255, 255, 255), (int(p[0]), int(p[1])), 2)
+            
+            if p[1] > self.height:
+                to_remove.append(i)
+                
+        for i in reversed(to_remove):
+            self.particles.pop(i)
 
     def close(self):
         pygame.quit()

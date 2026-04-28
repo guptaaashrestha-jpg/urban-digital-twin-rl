@@ -26,6 +26,12 @@ class VehicleState(Enum):
     CLEARED = auto()       # Past intersection, will be removed
 
 
+class Weather(Enum):
+    CLEAR = auto()
+    RAIN = auto()
+    SNOW = auto()
+
+
 # --- Vehicle color palette (wait-time gradient) ---
 # Fresh vehicle (no wait)
 COLOR_FRESH = (72, 199, 142)       # Mint green
@@ -76,6 +82,8 @@ class Vehicle:
         max_speed: float = 3.0,
         length: int = 40,
         width: int = 24,
+        is_emergency: bool = False,
+        is_rogue: bool = False,
     ):
         Vehicle._id_counter += 1
         self.id = Vehicle._id_counter
@@ -83,10 +91,11 @@ class Vehicle:
         self.x = float(x)
         self.y = float(y)
         self.direction = direction
+        self.is_emergency = is_emergency
 
-        self.max_speed = max_speed
-        self.speed = max_speed  # Start at full speed
-        self.acceleration = 0.3
+        self.max_speed = max_speed * 1.5 if is_emergency else max_speed
+        self.speed = self.max_speed  # Start at full speed
+        self.acceleration = 0.5 if is_emergency else 0.3
         self.deceleration = 0.5
 
         # Dimensions — length is along travel direction, width across
@@ -96,6 +105,18 @@ class Vehicle:
         self.wait_time = 0         # Frames spent at speed 0
         self.total_travel_time = 0  # Total frames alive
         self.state = VehicleState.APPROACHING
+
+        self.is_rogue = is_rogue
+        self.is_v2x_equipped = False
+        self.v2x_target_speed = None
+        self.pulled_over = False
+        self.was_fined = False
+
+        if not is_emergency:
+            if random.random() < 0.02:
+                self.is_rogue = True
+            elif random.random() < 0.40:
+                self.is_v2x_equipped = True
 
         # Random body color for visual variety
         self.body_color = random.choice(VEHICLE_BODY_COLORS)
@@ -142,7 +163,7 @@ class Vehicle:
 
     # --- Movement ---
 
-    def update(self, stop_position: float = None, vehicle_ahead_back: float = None, min_gap: float = 10):
+    def update(self, stop_position: float = None, vehicle_ahead_back: float = None, min_gap: float = 10, weather: Weather = None):
         """
         Update vehicle position for one simulation tick.
 
@@ -152,11 +173,32 @@ class Vehicle:
             vehicle_ahead_back: Back-edge position of the vehicle directly ahead
                                 in the queue (for maintaining gap).
             min_gap: Minimum pixel gap to maintain behind vehicle ahead.
+            weather: Current simulation weather for physics adjustments.
         """
+        if weather is None:
+            weather = Weather.CLEAR
+
+        self._eff_max_speed = self.max_speed
+        self._eff_accel = self.acceleration
+        self._eff_decel = self.deceleration
+
+        if weather == Weather.RAIN:
+            self._eff_max_speed *= 0.8
+            self._eff_decel *= 0.5
+        elif weather == Weather.SNOW:
+            self._eff_max_speed *= 0.5
+            self._eff_accel *= 0.3
+            self._eff_decel *= 0.3
+
         self.total_travel_time += 1
 
         if self.state == VehicleState.CLEARED:
             # Keep moving out of frame
+            self._move_forward()
+            return
+            
+        if self.pulled_over:
+            self.speed = max(0, self.speed - self._eff_decel * 2)
             self._move_forward()
             return
 
@@ -189,7 +231,25 @@ class Vehicle:
                 light_stop = stop_position + self.length / 2
                 effective_stop = max(light_stop, effective_stop) if effective_stop else light_stop
 
-        if effective_stop is not None:
+        # Determine if we are closely following a car
+        car_stop = None
+        if vehicle_ahead_back is not None:
+            if self.direction == Direction.NORTH: car_stop = vehicle_ahead_back + min_gap + self.length / 2
+            elif self.direction == Direction.SOUTH: car_stop = vehicle_ahead_back - min_gap - self.length / 2
+            elif self.direction == Direction.EAST: car_stop = vehicle_ahead_back - min_gap - self.length / 2
+            else: car_stop = vehicle_ahead_back + min_gap + self.length / 2
+            
+        is_following_close = False
+        if car_stop is not None and self._should_stop(car_stop):
+            is_following_close = True
+
+        if self.v2x_target_speed is not None and not is_following_close:
+            # V2X active: smooth speed match
+            if self.speed < self.v2x_target_speed:
+                self.speed = min(self.v2x_target_speed, self.speed + self._eff_accel * 0.5)
+            else:
+                self.speed = max(0.5, max(self.v2x_target_speed, self.speed - self._eff_decel * 0.5))
+        elif effective_stop is not None:
             # Check if we need to stop or slow down
             if self._should_stop(effective_stop):
                 self._decelerate_to_stop(effective_stop)
@@ -197,6 +257,9 @@ class Vehicle:
                 self._accelerate()
         else:
             # No obstacles — full speed
+            self._accelerate()
+
+        # No obstacles — full speed
             self._accelerate()
 
         self._move_forward()
@@ -212,7 +275,7 @@ class Vehicle:
         """Check if we're close enough to the stop point to begin braking."""
         dist = self._distance_to(stop_at)
         # Braking distance: v^2 / (2 * deceleration)
-        brake_dist = (self.speed ** 2) / (2 * self.deceleration + 0.01)
+        brake_dist = (self.speed ** 2) / (2 * self._eff_decel + 0.01)
         return dist <= brake_dist + 5  # Small buffer
 
     def _distance_to(self, stop_at: float) -> float:
@@ -250,13 +313,13 @@ class Vehicle:
                 self.x = stop_at + self.length / 2
         else:
             # Decelerate proportionally to distance
-            target_speed = max(0.5, self.max_speed * (dist / 80))
+            target_speed = max(0.5, self._eff_max_speed * (dist / 80))
             self.speed = max(0, min(self.speed, target_speed))
 
     def _accelerate(self):
         """Accelerate toward max speed."""
-        if self.speed < self.max_speed:
-            self.speed = min(self.max_speed, self.speed + self.acceleration)
+        if self.speed < self._eff_max_speed:
+            self.speed = min(self._eff_max_speed, self.speed + self._eff_accel)
 
     def _move_forward(self):
         """Move the vehicle in its travel direction."""

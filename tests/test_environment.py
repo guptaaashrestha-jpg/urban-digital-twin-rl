@@ -46,13 +46,13 @@ def test_environment_reset_and_step():
     obs, info = env.reset()
     
     # Check observation shape
-    assert obs.shape == (14,)
+    assert obs.shape == (22,)
     assert isinstance(obs, np.ndarray)
     
     # Check step behavior
     next_obs, reward, terminated, truncated, info = env.step(action=0)
     
-    assert next_obs.shape == (14,)
+    assert next_obs.shape == (22,)
     assert isinstance(reward, float)
     assert isinstance(terminated, bool)
     assert isinstance(truncated, bool)

@@ -98,7 +98,7 @@ def main():
     
     # Evaluate Trained DQN
     dqn = DQNAgent(
-        state_dim=14,
+        state_dim=22,
         action_dim=3,
         hidden_size=config.training.hidden_size,
         device=config.training.device

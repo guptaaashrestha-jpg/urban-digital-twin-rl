@@ -12,7 +12,7 @@ Reward: Combination of wait-time penalty, throughput bonus, and switching penalt
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from .intersection import Intersection
+from .intersection import Intersection, Direction, Phase, Weather
 from .vehicle import Direction, VehicleState
 from .traffic_light import Phase
 
@@ -56,6 +56,8 @@ class TrafficEnv(gym.Env):
         vehicle_width = 24
         min_gap = 10
         spawn_rate = 0.02
+        emergency_spawn_rate = 0.001
+        rush_hour_multiplier = 3.0
         green_dur = 20.0
         yellow_dur = 3.0
         allred_dur = 2.0
@@ -70,6 +72,8 @@ class TrafficEnv(gym.Env):
             vehicle_width = sim.vehicle.width
             min_gap = sim.vehicle.min_gap
             spawn_rate = sim.vehicle.spawn_rate
+            emergency_spawn_rate = getattr(sim.vehicle, "emergency_spawn_rate", 0.001)
+            rush_hour_multiplier = getattr(sim.vehicle, "rush_hour_multiplier", 3.0)
             green_dur = sim.traffic_light.green_duration
             yellow_dur = sim.traffic_light.yellow_duration
             allred_dur = sim.traffic_light.all_red_duration
@@ -82,9 +86,10 @@ class TrafficEnv(gym.Env):
         self._intersection_params = dict(
             sim_size=sim_size, lane_width=lane_width, max_speed=max_speed,
             vehicle_length=vehicle_length, vehicle_width=vehicle_width,
-            min_gap=min_gap, spawn_rate=spawn_rate,
+            min_gap=min_gap, spawn_rate=spawn_rate, emergency_spawn_rate=emergency_spawn_rate,
             green_duration=green_dur, yellow_duration=yellow_dur,
             all_red_duration=allred_dur, fps=fps,
+            rush_hour_multiplier=rush_hour_multiplier, max_steps=self.max_steps
         )
 
         self.intersection = Intersection(**self._intersection_params)
@@ -99,7 +104,7 @@ class TrafficEnv(gym.Env):
         # --- Spaces ---
         self.max_queue = 30  # Normalization cap
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(14,), dtype=np.float32
+            low=0.0, high=1.0, shape=(22,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(3)  # keep, NS_green, EW_green
 
@@ -200,12 +205,31 @@ class TrafficEnv(gym.Env):
         # Total waiting (normalized)
         total_wait_norm = min(inter.total_waiting / (self.max_queue * 4), 1.0)
 
+        # Emergency vehicle flags
+        emergencies = []
+        for d in [Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST]:
+            has_emergency = any(v.is_emergency for v in inter.vehicles[d])
+            emergencies.append(1.0 if has_emergency else 0.0)
+
+        # Time of day (normalized)
+        tod_norm = inter.time_of_day_fraction
+
+        # Weather one-hot
+        weather_vec = [
+            1.0 if inter.current_weather == Weather.CLEAR else 0.0,
+            1.0 if inter.current_weather == Weather.RAIN else 0.0,
+            1.0 if inter.current_weather == Weather.SNOW else 0.0,
+        ]
+
         obs = np.array([
             q_north, q_south, q_east, q_west,
             *phase_vec,
             elapsed_norm,
             *densities,
             total_wait_norm,
+            *emergencies,
+            tod_norm,
+            *weather_vec,
         ], dtype=np.float32)
 
         return obs
@@ -240,11 +264,18 @@ class TrafficEnv(gym.Env):
         else:
             balance_penalty = 0.0
 
+        # 4. Emergency vehicle penalty
+        emergency_penalty = 0.0
+        for d in Direction:
+            for v in inter.vehicles[d]:
+                if v.is_emergency and v.state == VehicleState.WAITING:
+                    emergency_penalty -= 10.0  # Massive penalty per frame per waiting ambulance
+
         # Update tracking
         self._prev_total_wait = current_total_wait
         self._prev_cleared = inter.total_vehicles_cleared
 
-        reward = wait_penalty + throughput_bonus + balance_penalty
+        reward = wait_penalty + throughput_bonus + balance_penalty + emergency_penalty
 
         return float(reward)
 
