@@ -1,0 +1,53 @@
+# ============================================================
+# Urban Digital Twin — Default Configuration
+# ============================================================
+
+simulation:
+  # Window & Layout
+  window_width: 1200
+  window_height: 800
+  sim_area_size: 800
+  fps: 60
+
+  # Road Geometry
+  road:
+    lane_width: 50
+    num_lanes: 2          # per road (1 each direction)
+
+  # Vehicle Properties
+  vehicle:
+    max_speed: 3.0        # pixels per frame
+    acceleration: 0.3     # pixels per frame^2
+    deceleration: 0.5     # braking strength
+    length: 40            # pixels (along direction of travel)
+    width: 24             # pixels (across direction of travel)
+    min_gap: 10           # pixels between queued vehicles
+    spawn_rate: 0.02      # probability per frame per direction (Poisson-like)
+
+  # Traffic Light Timing (in seconds)
+  traffic_light:
+    green_duration: 20
+    yellow_duration: 3
+    all_red_duration: 2
+
+# RL Training (Phase 3)
+training:
+  algorithm: "dqn"
+  episodes: 500
+  max_steps_per_episode: 3600
+  learning_rate: 0.0003
+  gamma: 0.99
+  epsilon_start: 1.0
+  epsilon_end: 0.01
+  epsilon_decay: 50000
+  batch_size: 64
+  replay_buffer_size: 100000
+  target_update_tau: 0.005
+  hidden_size: 256
+  device: "cuda"
+
+# Telemetry (Phase 4)
+telemetry:
+  db_path: "c:/Users/gshre/urban-digital-twin/data/telemetry.db"
+  buffer_size: 100
+  export_dir: "c:/Users/gshre/urban-digital-twin/data/exports"

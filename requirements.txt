@@ -1,0 +1,19 @@
+# Core Simulation
+pygame>=2.5.0
+numpy>=1.24.0
+
+# Reinforcement Learning
+torch>=2.1.0
+gymnasium>=0.29.0
+
+# Configuration
+pyyaml>=6.0
+
+# Data & Analytics
+pandas>=2.1.0
+matplotlib>=3.7.0
+tensorboard>=2.15.0
+
+# Code Quality
+pytest>=7.4.0
+ruff>=0.1.0
