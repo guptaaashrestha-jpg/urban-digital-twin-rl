@@ -46,7 +46,7 @@ graph LR
     F -- "CSV export" --> G
 ```
 ## New Feature Added
--### 🚀 V2X "Zero-Brake" Intersection Sync
+🚀 V2X "Zero-Brake" Intersection Sync
 Implemented a Cooperative Trajectory Negotiation system that allows the intersection AI to broadcast optimal speeds to smart vehicles. 
 - **Efficiency:** Prevents vehicles from stopping at red lights by timing their arrival for the green phase.
 - **Visuals:** Real-time pulsing cyan data-beams connect the infrastructure to synced vehicles.
