@@ -19,16 +19,16 @@ An intelligent traffic management simulation that uses **Reinforcement Learning 
 ## 🧠 Architecture
 
 ```mermaid
-graph LR
-    subgraph "Layer 1: Simulation Environment"
+graph TD
+    subgraph "Layer 1: Physics & V2X Infrastructure"
         A["Pygame 2D Engine<br/>(Traffic Grid + Vehicles)"]
+        V2X["V2X Broadcast Controller<br/>(Cooperative Trajectory Negotiation)"]
         B["Environment API<br/>(OpenAI Gym Interface)"]
     end
 
     subgraph "Layer 2: AI Brain"
         C["PyTorch RL Agent<br/>(DQN)"]
         D["Policy Network<br/>(CUDA Accelerated)"]
-        E["Experience Replay Buffer"]
     end
 
     subgraph "Layer 3: Data & Analytics"
@@ -36,14 +36,19 @@ graph LR
         G["Power BI Dashboard<br/>(AI vs. Fixed Timer)"]
     end
 
-    A -- "state, reward" --> B
-    B -- "observation" --> C
-    C -- "action (phase)" --> B
-    B -- "step(action)" --> A
-    C --> D
-    C --> E
-    B -- "telemetry" --> F
-    F -- "CSV export" --> G
+    %% Simulation Loop
+    A -- "State/Reward" --> B
+    B -- "Observation" --> C
+    C -- "Action (Signal Phase)" --> B
+    B -- "Physics Step" --> A
+    
+    %% V2X Loop
+    A -- "Vehicle Telemetry" --> V2X
+    V2X -- "Speed Advisory Beams" --> A
+    
+    %% Analytics Loop
+    B -- "Telemetry Streams" --> F
+    F -- "CSV Export" --> G
 ```
 ## New Feature Added
 🚀 V2X "Zero-Brake" Intersection Sync
