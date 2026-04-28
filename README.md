@@ -10,6 +10,12 @@ An intelligent traffic management simulation that uses **Reinforcement Learning 
 
 ---
 
+### 🌐 [View the Live Landing Page & Showcase](https://guptaaashrestha-jpg.github.io/Landing/)
+
+---
+
+---
+
 ## 🎯 Project Highlights
 - **Custom Simulation Engine:** Built from scratch using Pygame, featuring realistic vehicle kinematics, queuing logic, and a premium dark-themed visualization.
 - **Reinforcement Learning Agent:** PyTorch-based DQN agent trained to dynamically adjust signal phases based on real-time traffic density and queue lengths.
