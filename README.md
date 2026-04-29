@@ -69,7 +69,7 @@ Implemented a Cooperative Trajectory Negotiation system that allows the intersec
 ### 1. Installation
 Clone the repository and install the dependencies:
 ```bash
-git clone https://github.com/yourusername/urban-digital-twin.git
+git clone https://github.com/guptaaashrestha-jpg/urban-digital-twin-rl.git
 cd urban-digital-twin
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
